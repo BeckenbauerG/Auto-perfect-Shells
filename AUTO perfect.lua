@@ -65,14 +65,14 @@ local Settings = {
     AutoStart = false,
     AutoSell = false,
 
-    Humanize = true,
+    Humanize = false,
 
-    QTE_FPS = 60,
+    QTE_FPS = 240,
 
     ClickRandomness = 8,
 
-    MinReaction = 0.015,
-    MaxReaction = 0.045,
+    MinReaction = 0,
+    MaxReaction = 0,
 
     AutoStartDelay = 0.7,
     AutoSellDelay = 2.0,
@@ -100,7 +100,7 @@ local function IsMenuOpen()
     return ok and result
 end
 
-local function HumanWait()
+local function -- HumanWait() disabled for instant response
     if not Settings.Humanize then
         return
     end
@@ -125,7 +125,7 @@ local function SafeClick(x, y)
 
         VIM:SendMouseButtonEvent(x, y, 0, true, game, 0)
 
-        task.wait(RandomFloat(0.01, 0.03))
+        task.wait()
 
         VIM:SendMouseButtonEvent(x, y, 0, false, game, 0)
     end)
@@ -390,3 +390,5 @@ QTE_V11:Task(function()
 end)
 
 print("[v11] Loaded successfully")
+* Less spam clicking
+* Improved state handling
