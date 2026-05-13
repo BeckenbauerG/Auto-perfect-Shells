@@ -390,5 +390,3 @@ QTE_V11:Task(function()
 end)
 
 print("[v11] Loaded successfully")
-* Less spam clicking
-* Improved state handling
