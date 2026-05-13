@@ -1,392 +1,247 @@
-repeat task.wait() until game:IsLoaded()
+-- === AUTO QTE v10 ===
 
---// CLEANUP
 pcall(function()
-    if getgenv().QTE_V11 then
-        getgenv().QTE_V11:Destroy()
+    if game:GetService("CoreGui"):FindFirstChild("AutoQTE_GUI") then
+        game:GetService("CoreGui"):FindFirstChild("AutoQTE_GUI"):Destroy()
     end
 end)
+pcall(function() if _G.QTEConnection then _G.QTEConnection:Disconnect() end end)
+_G.StopQTE = true
+task.wait(0.2)
+_G.StopQTE = false
 
-local QTE_V11 = {}
-getgenv().QTE_V11 = QTE_V11
+print("[v10] Запуск...")
 
-QTE_V11.Connections = {}
-QTE_V11.Tasks = {}
-QTE_V11.Running = true
-
-function QTE_V11:Connect(signal, func)
-    local c = signal:Connect(func)
-    table.insert(self.Connections, c)
-    return c
-end
-
-function QTE_V11:Task(func)
-    local t = task.spawn(func)
-    table.insert(self.Tasks, t)
-    return t
-end
-
-function QTE_V11:Destroy()
-    self.Running = false
-
-    for _, c in pairs(self.Connections) do
-        pcall(function()
-            c:Disconnect()
-        end)
-    end
-
-    pcall(function()
-        if game:GetService("CoreGui"):FindFirstChild("AutoQTE_GUI") then
-            game:GetService("CoreGui").AutoQTE_GUI:Destroy()
-        end
-    end)
-
-    getgenv().QTE_V11 = nil
-end
-
-print("[v11] Initializing...")
-
---// SERVICES
-local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 local TweenService = game:GetService("TweenService")
-local RunService = game:GetService("RunService")
 local GuiService = game:GetService("GuiService")
+local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VIM = game:GetService("VirtualInputManager")
+local player = game.Players.LocalPlayer
+local pgui = player.PlayerGui
 
---// PLAYER
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local enabledQTE = false
+local enabledAutoStart = false
+local enabledAutoSell = false
 
---// SETTINGS
-local Settings = {
-    AutoQTE = false,
-    AutoStart = false,
-    AutoSell = false,
-
-    Humanize = false,
-
-    QTE_FPS = 240,
-
-    ClickRandomness = 8,
-
-    MinReaction = 0,
-    MaxReaction = 0,
-
-    AutoStartDelay = 0.7,
-    AutoSellDelay = 2.0,
-}
-
---// UTILS
-local function RandomFloat(min, max)
-    return min + math.random() * (max - min)
-end
-
-local function NormalizeAngle(a)
-    return a % 360
-end
-
-local function AngleDiff(a, b)
-    local d = math.abs(NormalizeAngle(a) - NormalizeAngle(b))
-    return d > 180 and 360 - d or d
-end
-
-local function IsMenuOpen()
-    local ok, result = pcall(function()
-        return GuiService.MenuIsOpen
-    end)
-
-    return ok and result
-end
-
-local function HumanWait()
-    if not Settings.Humanize then
-        return
-    end
-
-    task.wait(RandomFloat(Settings.MinReaction, Settings.MaxReaction))
-end
-
---// SAFE CLICK
-local function SafeClick(x, y)
+-- === КЛИК в безопасную точку через VIM ===
+local function safeVIMClick()
     pcall(function()
-        local viewport = workspace.CurrentCamera.ViewportSize
-
-        x = x or viewport.X * 0.75
-        y = y or viewport.Y * 0.75
-
-        if Settings.Humanize then
-            x += math.random(-Settings.ClickRandomness, Settings.ClickRandomness)
-            y += math.random(-Settings.ClickRandomness, Settings.ClickRandomness)
-        end
-
-        HumanWait()
-
+        local vp = workspace.CurrentCamera.ViewportSize
+        local x = vp.X * 0.8
+        local y = vp.Y * 0.8
         VIM:SendMouseButtonEvent(x, y, 0, true, game, 0)
-
-        task.wait()
-
+        task.wait(0.03)
         VIM:SendMouseButtonEvent(x, y, 0, false, game, 0)
     end)
 end
 
---// GUI
-local GUI = Instance.new("ScreenGui")
-GUI.Name = "AutoQTE_GUI"
-GUI.ResetOnSpawn = false
-GUI.Parent = CoreGui
-
-local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 210, 0, 155)
-Main.Position = UDim2.new(0, 20, 0.5, -75)
-Main.BackgroundColor3 = Color3.fromRGB(18,18,25)
-Main.BorderSizePixel = 0
-Main.Active = true
-Main.Draggable = true
-Main.Parent = GUI
-
-Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 14)
-
-local Stroke = Instance.new("UIStroke")
-Stroke.Color = Color3.fromRGB(60,60,80)
-Stroke.Thickness = 1.2
-Stroke.Parent = Main
-
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1,0,0,30)
-Title.BackgroundTransparency = 1
-Title.Text = "⚡ Auto QTE v11"
-Title.TextColor3 = Color3.fromRGB(220,220,255)
-Title.Font = Enum.Font.GothamBold
-Title.TextSize = 14
-Title.Parent = Main
-
-local Status = Instance.new("TextLabel")
-Status.Size = UDim2.new(1,0,0,18)
-Status.Position = UDim2.new(0,0,0,24)
-Status.BackgroundTransparency = 1
-Status.Text = "Idle"
-Status.TextColor3 = Color3.fromRGB(120,255,160)
-Status.Font = Enum.Font.Gotham
-Status.TextSize = 11
-Status.Parent = Main
-
-local function CreateToggle(text, y, callback)
-    local Holder = Instance.new("Frame")
-    Holder.Size = UDim2.new(1,-20,0,28)
-    Holder.Position = UDim2.new(0,10,0,y)
-    Holder.BackgroundTransparency = 1
-    Holder.Parent = Main
-
-    local Label = Instance.new("TextLabel")
-    Label.Size = UDim2.new(0,130,1,0)
-    Label.BackgroundTransparency = 1
-    Label.Text = text
-    Label.TextColor3 = Color3.fromRGB(190,190,210)
-    Label.Font = Enum.Font.Gotham
-    Label.TextSize = 12
-    Label.TextXAlignment = Enum.TextXAlignment.Left
-    Label.Parent = Holder
-
-    local Toggle = Instance.new("Frame")
-    Toggle.Size = UDim2.new(0,42,0,22)
-    Toggle.Position = UDim2.new(1,-42,0.5,-11)
-    Toggle.BackgroundColor3 = Color3.fromRGB(35,35,50)
-    Toggle.BorderSizePixel = 0
-    Toggle.Parent = Holder
-
-    Instance.new("UICorner", Toggle).CornerRadius = UDim.new(1,0)
-
-    local Circle = Instance.new("Frame")
-    Circle.Size = UDim2.new(0,18,0,18)
-    Circle.Position = UDim2.new(0,2,0.5,-9)
-    Circle.BackgroundColor3 = Color3.fromRGB(130,130,150)
-    Circle.BorderSizePixel = 0
-    Circle.Parent = Toggle
-
-    Instance.new("UICorner", Circle).CornerRadius = UDim.new(1,0)
-
-    local Button = Instance.new("TextButton")
-    Button.Size = UDim2.new(1,0,1,0)
-    Button.BackgroundTransparency = 1
-    Button.Text = ""
-    Button.Parent = Toggle
-
-    local State = false
-
-    local function Set(v)
-        State = v
-
-        if State then
-            TweenService:Create(Circle, TweenInfo.new(0.2), {
-                Position = UDim2.new(1,-20,0.5,-9),
-                BackgroundColor3 = Color3.fromRGB(100,255,170)
-            }):Play()
-
-            TweenService:Create(Toggle, TweenInfo.new(0.2), {
-                BackgroundColor3 = Color3.fromRGB(30,70,55)
-            }):Play()
-        else
-            TweenService:Create(Circle, TweenInfo.new(0.2), {
-                Position = UDim2.new(0,2,0.5,-9),
-                BackgroundColor3 = Color3.fromRGB(130,130,150)
-            }):Play()
-
-            TweenService:Create(Toggle, TweenInfo.new(0.2), {
-                BackgroundColor3 = Color3.fromRGB(35,35,50)
-            }):Play()
-        end
-
-        callback(State)
-    end
-
-    Button.MouseButton1Click:Connect(function()
-        Set(not State)
+-- === ПРОВЕРКИ ===
+local function isMenuOpen()
+    local ok, result = pcall(function()
+        return GuiService.MenuIsOpen
     end)
+    return ok and result
 end
 
-CreateToggle("Auto QTE", 50, function(v)
-    Settings.AutoQTE = v
-end)
+local function normalizeAngle(a) return a % 360 end
+local function angleDiff(a, b)
+    local d = math.abs(normalizeAngle(a) - normalizeAngle(b))
+    return d > 180 and 360 - d or d
+end
 
-CreateToggle("Auto Start", 82, function(v)
-    Settings.AutoStart = v
-end)
+-- === GUI ===
+local gui = Instance.new("ScreenGui")
+gui.Name = "AutoQTE_GUI"
+gui.ResetOnSpawn = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = CoreGui
 
-CreateToggle("Auto Sell", 114, function(v)
-    Settings.AutoSell = v
-end)
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "Panel"
+mainFrame.Size = UDim2.new(0, 190, 0, 118)
+mainFrame.Position = UDim2.new(0, 20, 0.5, -59)
+mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 22)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = gui
 
---// QTE
-local PreviousDiff = 999
-local Clicked = false
-local PreviousRotation = nil
-local LastUpdate = 0
+Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 14)
 
-QTE_V11:Connect(RunService.RenderStepped, function()
-    if not QTE_V11.Running then
-        return
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Color = Color3.fromRGB(50, 50, 70)
+mainStroke.Thickness = 1.5
+mainStroke.Parent = mainFrame
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, 0, 0, 24)
+titleLabel.Position = UDim2.new(0, 0, 0, 2)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "⚡ Shipwright Auto"
+titleLabel.TextColor3 = Color3.fromRGB(200, 200, 230)
+titleLabel.TextSize = 13
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.Parent = mainFrame
+
+local function createToggle(name, yPos, callback)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, -20, 0, 26)
+    row.Position = UDim2.new(0, 10, 0, yPos)
+    row.BackgroundTransparency = 1
+    row.Parent = mainFrame
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0, 110, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = name
+    label.TextColor3 = Color3.fromRGB(170, 170, 190)
+    label.TextSize = 12
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = row
+
+    local bg = Instance.new("Frame")
+    bg.Size = UDim2.new(0, 40, 0, 20)
+    bg.Position = UDim2.new(1, -40, 0.5, -10)
+    bg.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+    bg.BorderSizePixel = 0
+    bg.Parent = row
+    Instance.new("UICorner", bg).CornerRadius = UDim.new(1, 0)
+
+    local circle = Instance.new("Frame")
+    circle.Size = UDim2.new(0, 16, 0, 16)
+    circle.Position = UDim2.new(0, 2, 0.5, -8)
+    circle.BackgroundColor3 = Color3.fromRGB(130, 130, 150)
+    circle.BorderSizePixel = 0
+    circle.Parent = bg
+    Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundTransparency = 1
+    btn.Text = ""
+    btn.Parent = bg
+
+    local state = false
+    local ti = TweenInfo.new(0.2, Enum.EasingStyle.Quad)
+
+    local function set(v)
+        state = v
+        if state then
+            TweenService:Create(circle, ti, {
+                Position = UDim2.new(1, -18, 0.5, -8),
+                BackgroundColor3 = Color3.fromRGB(80, 255, 160)
+            }):Play()
+            TweenService:Create(bg, ti, {
+                BackgroundColor3 = Color3.fromRGB(25, 70, 50)
+            }):Play()
+            label.TextColor3 = Color3.fromRGB(80, 255, 160)
+        else
+            TweenService:Create(circle, ti, {
+                Position = UDim2.new(0, 2, 0.5, -8),
+                BackgroundColor3 = Color3.fromRGB(130, 130, 150)
+            }):Play()
+            TweenService:Create(bg, ti, {
+                BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+            }):Play()
+            label.TextColor3 = Color3.fromRGB(170, 170, 190)
+        end
+        callback(state)
     end
 
-    if tick() - LastUpdate < (1 / Settings.QTE_FPS) then
-        return
-    end
+    btn.MouseButton1Click:Connect(function() set(not state) end)
+    return set
+end
 
-    LastUpdate = tick()
+local setQTE = createToggle("Auto QTE", 28, function(v) enabledQTE = v end)
+local setStart = createToggle("Auto Start", 56, function(v) enabledAutoStart = v end)
+local setSell = createToggle("Auto Sell", 84, function(v) enabledAutoSell = v end)
 
-    if not Settings.AutoQTE then
-        PreviousDiff = 999
-        Clicked = false
-        return
-    end
+print("[v10] GUI готов")
 
-    if IsMenuOpen() then
+-- === QTE ЛОГИКА (PERFECT CLICK) ===
+local prevDiff = 999
+local clicked = false
+local prevLineRot = nil
+local qteLineMoving = false
+
+_G.QTEConnection = RunService.RenderStepped:Connect(function()
+    if not enabledQTE then
+        prevDiff = 999
+        clicked = false
         return
     end
 
     pcall(function()
-        local QTE = PlayerGui:FindFirstChild("QTE")
+        local qte = pgui:FindFirstChild("QTE")
+        if not qte then prevDiff = 999; clicked = false; qteLineMoving = false return end
+        local main = qte:FindFirstChild("Main")
+        if not main then qteLineMoving = false return end
+        local line = main:FindFirstChild("Line")
+        local bars = main:FindFirstChild("Bars")
+        if not line or not bars then qteLineMoving = false return end
 
-        if not QTE then
-            Status.Text = "Waiting QTE"
-            PreviousDiff = 999
-            Clicked = false
-            return
+        -- Проверяем вращается ли линия (мини-игра активна)
+        local lineRot = line.Rotation
+        if prevLineRot ~= nil then
+            qteLineMoving = math.abs(lineRot - prevLineRot) > 0.1
         end
+        prevLineRot = lineRot
 
-        local MainFrame = QTE:FindFirstChild("Main")
-
-        if not MainFrame then
-            return
-        end
-
-        local Line = MainFrame:FindFirstChild("Line")
-        local Bars = MainFrame:FindFirstChild("Bars")
-
-        if not Line or not Bars then
-            return
-        end
-
-        local CurrentRotation = Line.Rotation
-
-        local TargetBar
-
-        for _, bar in pairs(Bars:GetChildren()) do
+        local targetBar
+        for _, bar in pairs(bars:GetChildren()) do
             if bar:IsA("ImageLabel") and bar.Visible then
-                TargetBar = bar
+                targetBar = bar
                 break
             end
         end
+        if not targetBar then prevDiff = 999; clicked = false return end
 
-        if not TargetBar then
-            return
-        end
+        local diff = angleDiff(lineRot, targetBar.Rotation)
+        local barSize = tonumber(targetBar.Name:match("%d+")) or 15
 
-        local Difference = AngleDiff(CurrentRotation, TargetBar.Rotation)
-
-        local BarSize = tonumber(TargetBar.Name:match("%d+")) or 15
-
-        if not Clicked and Difference <= (BarSize / 2) then
-            if Difference > PreviousDiff then
-                Status.Text = "Perfect Hit"
-
-                SafeClick()
-
-                Clicked = true
+        if not clicked and diff <= (barSize * 2) then
+            if diff > prevDiff then
+                safeVIMClick()
+                clicked = true
             end
         end
 
-        if Difference > BarSize then
-            Clicked = false
+        if diff > barSize then
+            clicked = false
         end
 
-        PreviousDiff = Difference
-        PreviousRotation = CurrentRotation
+        prevDiff = diff
     end)
 end)
 
---// AUTO START
-QTE_V11:Task(function()
-    while QTE_V11.Running do
-        task.wait(Settings.AutoStartDelay)
-
-        if not Settings.AutoStart then
-            continue
+-- === AUTO START ===
+spawn(function()
+    print("[v10] Auto Start запущен")
+    while not _G.StopQTE do
+        if enabledAutoStart and not qteLineMoving then
+            safeVIMClick()
         end
-
-        if IsMenuOpen() then
-            continue
-        end
-
-        local QTE = PlayerGui:FindFirstChild("QTE")
-
-        if not QTE then
-            Status.Text = "Auto Starting"
-            SafeClick()
-        end
+        task.wait(0.5)
     end
 end)
 
---// AUTO SELL
-QTE_V11:Task(function()
-    while QTE_V11.Running do
-        task.wait(Settings.AutoSellDelay)
-
-        if not Settings.AutoSell then
-            continue
+-- === AUTO SELL ===
+spawn(function()
+    print("[v10] Auto Sell запущен")
+    while not _G.StopQTE do
+        if enabledAutoSell then
+            pcall(function()
+                local Event = ReplicatedStorage:FindFirstChild("ByteNetReliable")
+                if Event then
+                    Event:FireServer(buffer.fromstring("4"), nil)
+                end
+            end)
         end
-
-        pcall(function()
-            local Remote = ReplicatedStorage:FindFirstChild("ByteNetReliable")
-
-            if Remote then
-                Status.Text = "Auto Selling"
-
-                Remote:FireServer(buffer.fromstring("4"), nil)
-            end
-        end)
+        task.wait(2)
     end
 end)
 
-print("[v11] Loaded successfully")
+print("Auto Perfect BOSSSS")
