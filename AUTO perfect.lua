@@ -100,7 +100,7 @@ local function IsMenuOpen()
     return ok and result
 end
 
-local function -- HumanWait() disabled for instant response
+local function HumanWait()
     if not Settings.Humanize then
         return
     end
